@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const BASE = 'https://text.external-api.pangram.com';
 const POLL_INTERVAL_MS = 2000;
@@ -19,7 +20,7 @@ export const pangramAdapter: Adapter = {
     const apiKey = process.env.PANGRAM_API_KEY;
     if (!apiKey) return { status: 'error', error: 'PANGRAM_API_KEY not configured' };
 
-    const submitRes = await fetch(`${BASE}/task`, {
+    const submitRes = await fetchWithRetry(`${BASE}/task`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'x-api-key': apiKey },
       body: JSON.stringify({ text, public_dashboard_link: false }),
@@ -36,7 +37,7 @@ export const pangramAdapter: Adapter = {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const pollRes = await fetch(`${BASE}/task/${taskId}`, {
+      const pollRes = await fetchWithRetry(`${BASE}/task/${taskId}`, {
         headers: { 'x-api-key': apiKey },
       });
       const pollBody = await pollRes.json().catch(() => null);

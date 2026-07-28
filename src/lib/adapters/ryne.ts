@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const ENDPOINT = 'https://ryne.ai/api/ai-score';
 
@@ -16,7 +17,7 @@ export const ryneAdapter: Adapter = {
     const apiKey = process.env.RYNE_API_KEY;
     if (!apiKey) return { status: 'error', error: 'RYNE_API_KEY not configured' };
 
-    const res = await fetch(ENDPOINT, {
+    const res = await fetchWithRetry(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text, user_id: apiKey }),

@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const LOGIN_ENDPOINT = 'https://id.copyleaks.com/v3/account/login/api';
 const MIN_CHARS = 255;
@@ -9,7 +10,7 @@ async function getAccessToken(email: string, key: string): Promise<string> {
   if (cachedToken && cachedToken.expiresAt > Date.now() + 60_000) {
     return cachedToken.token;
   }
-  const res = await fetch(LOGIN_ENDPOINT, {
+  const res = await fetchWithRetry(LOGIN_ENDPOINT, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
     body: JSON.stringify({ email, key }),
@@ -48,7 +49,7 @@ export const copyleaksAdapter: Adapter = {
     }
 
     const scanId = `scan-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-    const res = await fetch(`https://api.copyleaks.com/v2/writer-detector/${scanId}/check`, {
+    const res = await fetchWithRetry(`https://api.copyleaks.com/v2/writer-detector/${scanId}/check`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ text, sandbox: false, explain: false, sensitivity: 2 }),

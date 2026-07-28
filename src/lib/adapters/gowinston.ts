@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const ENDPOINT = 'https://api.gowinston.ai/v2/ai-content-detection';
 const MIN_CHARS = 300;
@@ -17,7 +18,7 @@ export const gowinstonAdapter: Adapter = {
       return { status: 'error', error: `Text too short: Winston AI requires at least ${MIN_CHARS} characters (got ${text.length})` };
     }
 
-    const res = await fetch(ENDPOINT, {
+    const res = await fetchWithRetry(ENDPOINT, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

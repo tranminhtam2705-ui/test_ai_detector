@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const ENDPOINT = 'https://api.sapling.ai/api/v1/aidetect';
 
@@ -13,7 +14,7 @@ export const saplingAdapter: Adapter = {
     const key = process.env.SAPLING_API_KEY;
     if (!key) return { status: 'error', error: 'SAPLING_API_KEY not configured' };
 
-    const res = await fetch(ENDPOINT, {
+    const res = await fetchWithRetry(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, text, sent_scores: false, score_string: false }),

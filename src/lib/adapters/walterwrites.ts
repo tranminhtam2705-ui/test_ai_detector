@@ -1,4 +1,5 @@
 import type { Adapter, DetectorOutcome } from '../types';
+import { fetchWithRetry } from '../http';
 
 const DETECT_ENDPOINT = 'https://developer-portal.walterwrites.ai/api/detector/';
 const JOB_ENDPOINT = (taskId: string) => `https://developer-portal.walterwrites.ai/api/jobs/${taskId}/`;
@@ -31,7 +32,7 @@ export const walterwritesAdapter: Adapter = {
     const apiKey = process.env.WALTERWRITES_API_KEY;
     if (!apiKey) return { status: 'error', error: 'WALTERWRITES_API_KEY not configured' };
 
-    const res = await fetch(DETECT_ENDPOINT, {
+    const res = await fetchWithRetry(DETECT_ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-API-Key': apiKey },
       body: JSON.stringify({ content: text }),
@@ -53,7 +54,7 @@ export const walterwritesAdapter: Adapter = {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       await sleep(POLL_INTERVAL_MS);
-      const pollRes = await fetch(JOB_ENDPOINT(taskId), { headers: { 'X-API-Key': apiKey } });
+      const pollRes = await fetchWithRetry(JOB_ENDPOINT(taskId), { headers: { 'X-API-Key': apiKey } });
       const pollBody = await pollRes.json().catch(() => null);
       if (!pollRes.ok) {
         return { status: 'error', error: `HTTP ${pollRes.status} on poll: ${JSON.stringify(pollBody)}`, raw: pollBody };
