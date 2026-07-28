@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Detector Latency</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header>
+      <h1>AI Detector Latency</h1>
+      <p class="hint">
+        Theo dõi latency (ms) của các request XHR/fetch tới gptzero.me, originality.ai và
+        grammarly.com. Mở trang tool, paste text, bấm check/scan/detect như bình thường - kết quả
+        sẽ tự hiện ở đây.
+      </p>
+    </header>
+
+    <div class="toolbar">
+      <input id="filter" type="text" placeholder="Lọc theo từ khoá trong URL (vd: check, detect)..." />
+      <button id="clear">Xoá log</button>
+    </div>
+
+    <div id="empty" class="empty">Chưa có request nào được ghi nhận.</div>
+    <div id="list"></div>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

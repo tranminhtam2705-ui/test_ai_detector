@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "AI Detector Latency Sidebar",
+  "version": "1.0.0",
+  "description": "Measures request latency (ms) for gptzero.me, originality.ai, and grammarly.com in a side panel, for tools with no public API.",
+  "permissions": ["webRequest", "storage", "sidePanel"],
+  "host_permissions": [
+    "*://*.gptzero.me/*",
+    "*://*.originality.ai/*",
+    "*://*.grammarly.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open AI Detector Latency panel"
+  }
+}
