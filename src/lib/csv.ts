@@ -11,14 +11,84 @@ export function parseDataset(fileContent: string, fileName: string): DatasetRow[
     return arr.map((row, i) => normalizeRow(row, i));
   }
 
+  const fromHeaderCsv = tryParseHeaderCsv(fileContent);
+  if (fromHeaderCsv) return fromHeaderCsv;
+
+  return parseIdTextBlocks(fileContent);
+}
+
+/**
+ * Standard CSV with a header row containing a "text" column (e.g.
+ * id,text,label). Returns null (instead of throwing) if the file doesn't
+ * look like this shape, so parseDataset can fall back to the id/text-block
+ * format below.
+ */
+function tryParseHeaderCsv(fileContent: string): DatasetRow[] | null {
   const parsed = Papa.parse<Record<string, string>>(fileContent, {
     header: true,
     skipEmptyLines: true,
   });
-  if (parsed.errors.length) {
-    throw new Error(`CSV parse error: ${parsed.errors[0].message}`);
+  const fatalErrors = parsed.errors.filter((e) => e.code !== 'UndetectableDelimiter');
+  if (fatalErrors.length) return null;
+
+  const fields = parsed.meta.fields ?? [];
+  const hasTextColumn = fields.some((f) => ['text', 'Text', 'content', 'Content'].includes(f));
+  if (!hasTextColumn) return null;
+
+  try {
+    return parsed.data.map((row, i) => normalizeRow(row, i));
+  } catch {
+    return null;
   }
-  return parsed.data.map((row, i) => normalizeRow(row, i));
+}
+
+/**
+ * Fallback format for files like:
+ *
+ *   ROW-ID-1
+ *   "Some text for this row..."
+ *
+ *   ROW-ID-2
+ *   Some other text, possibly without quotes...
+ *
+ * i.e. blocks separated by one or more blank lines, where the first line of
+ * each block is the id and the remaining line(s) are the text (optionally
+ * wrapped in a single pair of double quotes).
+ */
+function parseIdTextBlocks(fileContent: string): DatasetRow[] {
+  const normalized = fileContent.replace(/\r\n/g, '\n');
+  const blocks = normalized
+    .split(/\n\s*\n+/)
+    .map((b) => b.trim())
+    .filter(Boolean);
+
+  const rows: DatasetRow[] = [];
+  for (const block of blocks) {
+    const lines = block
+      .split('\n')
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+    if (lines.length < 2) continue;
+
+    const id = lines[0];
+    const text = stripWrappingQuotes(lines.slice(1).join(' ').trim());
+    if (!text) continue;
+    rows.push({ id, text });
+  }
+
+  if (rows.length === 0) {
+    throw new Error(
+      'Could not parse dataset. Expected either a CSV with a "text" column, or blocks of one "id" line followed by one "text" line, separated by blank lines.',
+    );
+  }
+  return rows;
+}
+
+function stripWrappingQuotes(value: string): string {
+  if (value.length >= 2 && value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replace(/""/g, '"');
+  }
+  return value;
 }
 
 function normalizeRow(row: any, index: number): DatasetRow {
