@@ -1,6 +1,6 @@
 import { ADAPTERS, getAdapter } from './adapters';
-import { saveRun } from './storage';
-import type { DatasetRow, RunRecord } from './types';
+import { saveRun, loadRun } from './storage';
+import type { DatasetRow, DetectorOutcome, RunRecord } from './types';
 
 const DELAY_BETWEEN_ROWS_MS = 1500;
 
@@ -90,6 +90,73 @@ async function executeRun(run: RunRecord): Promise<void> {
 
   run.status = 'done';
   await saveRun(run);
+}
+
+// Matches the error messages our adapters produce for rate-limiting and
+// credit/coin exhaustion (see http.ts's 429 retry, and each adapter's
+// HTTP-error passthrough of the provider's own error body), so a retry only
+// re-runs entries that are plausibly transient - not deterministic failures
+// like "not configured" or "text too short" that would just fail again.
+const RETRYABLE_ERROR_PATTERN = /\b429\b|rate.?limit|throttled|too many requests|credit|coins?\b|trial[_ ]expired/i;
+
+function isRetryableError(message: string): boolean {
+  return RETRYABLE_ERROR_PATTERN.test(message);
+}
+
+/**
+ * Re-runs only the (row, tool) pairs from a previous run that failed with a
+ * rate-limit or insufficient-credit error, restricted to the given tools,
+ * and overwrites those entries in place on the same run record. Everything
+ * else in the run (successful results, permanent failures, other tools) is
+ * left untouched - this never re-processes the whole dataset.
+ */
+export async function retryTransientErrors(
+  runId: string,
+  toolKeys: string[],
+): Promise<{ retried: number } | { error: string }> {
+  const run = await loadRun(runId);
+  if (!run) return { error: 'Run not found' };
+  if (run.status === 'running') return { error: 'Run is still in progress' };
+
+  const toolSet = new Set(toolKeys);
+  const targetIndices = run.results
+    .map((r, i) => i)
+    .filter((i) => {
+      const r = run.results[i];
+      return toolSet.has(r.tool) && r.outcome.status === 'error' && isRetryableError(r.outcome.error);
+    });
+
+  if (targetIndices.length === 0) return { retried: 0 };
+
+  run.status = 'running';
+  await saveRun(run);
+
+  void (async () => {
+    for (const idx of targetIndices) {
+      const entry = run.results[idx];
+      const adapter = getAdapter(entry.tool);
+      const startedAt = new Date().toISOString();
+      let outcome: DetectorOutcome;
+      if (!adapter) {
+        outcome = { status: 'error', error: `Unknown tool: ${entry.tool}` };
+      } else if (!adapter.configured()) {
+        outcome = { status: 'error', error: `Not configured: ${adapter.configHint}` };
+      } else {
+        try {
+          outcome = await adapter.run(entry.text, {});
+        } catch (e) {
+          outcome = { status: 'error', error: e instanceof Error ? e.message : String(e) };
+        }
+      }
+      run.results[idx] = { ...entry, outcome, startedAt, finishedAt: new Date().toISOString() };
+      await saveRun(run);
+      await new Promise((resolve) => setTimeout(resolve, DELAY_BETWEEN_ROWS_MS));
+    }
+    run.status = 'done';
+    await saveRun(run);
+  })();
+
+  return { retried: targetIndices.length };
 }
 
 export function listAdapters() {

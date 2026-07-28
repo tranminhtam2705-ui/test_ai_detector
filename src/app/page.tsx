@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 type ToolInfo = {
   key: string;
@@ -47,6 +47,15 @@ type RunRecord = {
   results: ResultRow[];
 };
 
+type RunSummary = {
+  id: string;
+  createdAt: string;
+  status: 'running' | 'done';
+  totalRows: number;
+  tools: string[];
+  resultCount: number;
+};
+
 export default function Home() {
   const [tools, setTools] = useState<ToolInfo[]>([]);
   const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
@@ -55,6 +64,16 @@ export default function Home() {
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunRecord | null>(null);
   const [starting, setStarting] = useState(false);
+  const [batches, setBatches] = useState<RunSummary[]>([]);
+  const [selectedBatchId, setSelectedBatchId] = useState<string>('');
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
+
+  function refreshBatches() {
+    fetch('/api/runs')
+      .then((r) => r.json())
+      .then((data) => setBatches(data.runs ?? []));
+  }
 
   useEffect(() => {
     fetch('/api/tools')
@@ -63,18 +82,31 @@ export default function Home() {
         setTools(data.tools);
         setSelectedTools(new Set(data.tools.map((t: ToolInfo) => t.key)));
       });
+    refreshBatches();
   }, []);
 
-  useEffect(() => {
-    if (!runId) return;
-    const interval = setInterval(async () => {
-      const res = await fetch(`/api/run/${runId}`);
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  function startPolling(id: string) {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    pollIntervalRef.current = setInterval(async () => {
+      const res = await fetch(`/api/run/${id}`);
       if (!res.ok) return;
       const data: RunRecord = await res.json();
       setRun(data);
-      if (data.status === 'done') clearInterval(interval);
+      if (data.status === 'done') {
+        if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+        refreshBatches();
+      }
     }, 1500);
-    return () => clearInterval(interval);
+  }
+
+  useEffect(() => {
+    if (!runId) return;
+    startPolling(runId);
+    return () => {
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    };
   }, [runId]);
 
   const expectedResultCount = useMemo(() => {
@@ -128,6 +160,33 @@ export default function Home() {
       setRun(null);
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function handleRetry() {
+    if (!selectedBatchId || selectedTools.size === 0) return;
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const res = await fetch(`/api/run/${selectedBatchId}/retry`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tools: Array.from(selectedTools) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setRetryError(data.error ?? 'Failed to retry');
+        return;
+      }
+      if (data.retried === 0) {
+        setRetryError('Không có dòng nào bị lỗi rate-limit/hết credit khớp với tool đã chọn trong batch này.');
+        return;
+      }
+      setRunId(selectedBatchId);
+      setRun(null);
+      startPolling(selectedBatchId);
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -223,6 +282,39 @@ export default function Home() {
         {run && run.status === 'done' && (
           <p style={{ marginTop: '0.75rem', color: '#4ade80' }}>Hoàn tất: {run.results.length} kết quả.</p>
         )}
+      </div>
+
+      <div className="card">
+        <h2>3b. Chạy lại lỗi rate-limit / hết credit từ 1 batch trước</h2>
+        <p style={{ fontSize: '0.85rem', color: '#9aa0a6' }}>
+          Đọc lại kết quả một batch đã chạy, chỉ chạy lại đúng những dòng bị lỗi rate-limit (HTTP 429) hoặc hết
+          credit/coin, cho các tool đang được tick ở mục 1 - không đụng tới các dòng đã thành công hay dataset gốc.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            value={selectedBatchId}
+            onChange={(e) => setSelectedBatchId(e.target.value)}
+            style={{ background: '#171a21', color: '#e6e6e6', border: '1px solid #262b36', borderRadius: 8, padding: '0.5rem' }}
+          >
+            <option value="">-- Chọn batch --</option>
+            {batches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {new Date(b.createdAt).toLocaleString()} · {b.totalRows} dòng · {b.tools.join(', ')} · {b.resultCount} kết
+                quả {b.status === 'running' ? '(đang chạy)' : ''}
+              </option>
+            ))}
+          </select>
+          <button className="secondary" onClick={refreshBatches} type="button">
+            Làm mới danh sách
+          </button>
+          <button
+            onClick={handleRetry}
+            disabled={!selectedBatchId || selectedTools.size === 0 || retrying || run?.status === 'running'}
+          >
+            {retrying ? 'Đang chạy lại...' : 'Chạy lại lỗi rate-limit/credit'}
+          </button>
+        </div>
+        {retryError && <div className="error-text">{retryError}</div>}
       </div>
 
       {run && run.results.length > 0 && (

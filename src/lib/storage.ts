@@ -25,3 +25,36 @@ export async function loadRun(runId: string): Promise<RunRecord | null> {
     return null;
   }
 }
+
+export type RunSummary = {
+  id: string;
+  createdAt: string;
+  status: 'running' | 'done';
+  totalRows: number;
+  tools: string[];
+  resultCount: number;
+};
+
+export async function listRuns(): Promise<RunSummary[]> {
+  await ensureDir();
+  const files = await fs.readdir(DATA_DIR).catch(() => []);
+  const summaries: RunSummary[] = [];
+  for (const file of files) {
+    if (!file.endsWith('.json')) continue;
+    try {
+      const raw = await fs.readFile(path.join(DATA_DIR, file), 'utf-8');
+      const run = JSON.parse(raw) as RunRecord;
+      summaries.push({
+        id: run.id,
+        createdAt: run.createdAt,
+        status: run.status,
+        totalRows: run.totalRows,
+        tools: run.tools,
+        resultCount: run.results.length,
+      });
+    } catch {
+      // skip unreadable/corrupt run files
+    }
+  }
+  return summaries.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+}
