@@ -22,7 +22,22 @@ type ResultRow = {
   text: string;
   tool: string;
   outcome: DetectorOutcome;
+  startedAt: string;
+  finishedAt: string;
 };
+
+function latencyMs(r: ResultRow): number | null {
+  const ms = new Date(r.finishedAt).getTime() - new Date(r.startedAt).getTime();
+  return isNaN(ms) ? null : ms;
+}
+
+function creditsUsedFrom(raw: unknown): number | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const r = raw as Record<string, any>;
+  if (typeof r.credits_used === 'number') return r.credits_used;
+  if (typeof r.scannedDocument?.actualCredits === 'number') return r.scannedDocument.actualCredits;
+  return null;
+}
 
 type RunRecord = {
   id: string;
@@ -118,6 +133,33 @@ export default function Home() {
 
   const progressPct = run ? Math.min(100, Math.round((run.results.length / (run.totalRows * run.tools.length)) * 100)) : 0;
 
+  const toolSummary = useMemo(() => {
+    if (!run) return [];
+    const byTool = new Map<
+      string,
+      { count: number; ok: number; error: number; latencies: number[]; creditsUsed: number[] }
+    >();
+    for (const r of run.results) {
+      const entry = byTool.get(r.tool) ?? { count: 0, ok: 0, error: 0, latencies: [], creditsUsed: [] };
+      entry.count++;
+      if (r.outcome.status === 'ok') entry.ok++;
+      else entry.error++;
+      const ms = latencyMs(r);
+      if (ms !== null) entry.latencies.push(ms);
+      const used = creditsUsedFrom(r.outcome.raw);
+      if (used !== null) entry.creditsUsed.push(used);
+      byTool.set(r.tool, entry);
+    }
+    return Array.from(byTool.entries()).map(([tool, e]) => ({
+      tool,
+      count: e.count,
+      ok: e.ok,
+      error: e.error,
+      avgLatencyMs: e.latencies.length ? Math.round(e.latencies.reduce((a, b) => a + b, 0) / e.latencies.length) : null,
+      totalCredits: e.creditsUsed.length ? e.creditsUsed.reduce((a, b) => a + b, 0) : null,
+    }));
+  }, [run]);
+
   return (
     <div className="container">
       <h1>AI Detector Testing Portal</h1>
@@ -185,19 +227,62 @@ export default function Home() {
 
       {run && run.results.length > 0 && (
         <div className="card">
+          <h2>4. Tổng hợp theo tool (latency, credit)</h2>
+          <p style={{ fontSize: '0.8rem', color: '#9aa0a6' }}>
+            Credit/coin đã dùng chỉ hiện với tool trả về thông tin này trong response (Winston AI, Copyleaks). Sapling
+            miễn phí. Pangram, WalterWrites, Ryne.ai không trả credit trong response request đơn lẻ — cần check
+            dashboard riêng của họ để biết chính xác.
+          </p>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>tool</th>
+                  <th>số request</th>
+                  <th>thành công</th>
+                  <th>lỗi</th>
+                  <th>latency TB (ms)</th>
+                  <th>credit đã dùng (nếu có)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {toolSummary.map((s) => (
+                  <tr key={s.tool}>
+                    <td>{s.tool}</td>
+                    <td>{s.count}</td>
+                    <td className="status-ok">{s.ok}</td>
+                    <td className={s.error > 0 ? 'status-error' : ''}>{s.error}</td>
+                    <td>{s.avgLatencyMs ?? '—'}</td>
+                    <td>{s.totalCredits ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {run && run.results.length > 0 && (
+        <div className="card">
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <h2>4. Kết quả (dataset | tool_used | result)</h2>
-            <a href={`/api/export/${run.id}`}>
-              <button className="secondary">Export</button>
-            </a>
+            <h2>5. Kết quả chi tiết</h2>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <a href={`/api/export/${run.id}`}>
+                <button className="secondary">Export (dataset|tool_used|result)</button>
+              </a>
+              <a href={`/api/export/${run.id}/detailed`}>
+                <button className="secondary">Export chi tiết (CSV, có latency/credit)</button>
+              </a>
+            </div>
           </div>
           <div className="table-wrap">
             <table>
               <thead>
                 <tr>
-                  <th style={{ width: '45%' }}>dataset</th>
-                  <th style={{ width: '15%' }}>tool_used</th>
+                  <th style={{ width: '40%' }}>dataset</th>
+                  <th style={{ width: '12%' }}>tool_used</th>
                   <th>result</th>
+                  <th style={{ width: '8%' }}>latency (ms)</th>
                 </tr>
               </thead>
               <tbody>
@@ -207,9 +292,10 @@ export default function Home() {
                     <td>{r.tool}</td>
                     <td className={r.outcome.status === 'ok' ? 'status-ok' : 'status-error'}>
                       {r.outcome.status === 'ok'
-                        ? `${r.outcome.label}${r.outcome.aiScore !== null && r.outcome.aiScore !== undefined ? ` (aiScore=${r.outcome.aiScore})` : ''}`
+                        ? `${r.outcome.label}${r.outcome.aiScore !== null && r.outcome.aiScore !== undefined ? ` (aiScore=${r.outcome.aiScore})` : ''}${r.outcome.note ? ` — ${r.outcome.note}` : ''}`
                         : `ERROR: ${r.outcome.error}`}
                     </td>
+                    <td>{latencyMs(r) ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
