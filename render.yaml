@@ -1,0 +1,31 @@
+services:
+  - type: web
+    name: ai-detector-testing-portal
+    runtime: node
+    plan: free
+    branch: claude/ai-detector-testing-portal-5dty53
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_USE_ENV_PROXY
+        value: "1"
+      - key: PORTAL_BASIC_AUTH_USER
+        sync: false
+      - key: PORTAL_BASIC_AUTH_PASS
+        sync: false
+      - key: SAPLING_API_KEY
+        sync: false
+      - key: GOWINSTON_API_KEY
+        sync: false
+      - key: PANGRAM_API_KEY
+        sync: false
+      - key: PANGRAM_API_NAME
+        sync: false
+      - key: COPYLEAKS_EMAIL
+        sync: false
+      - key: COPYLEAKS_API_KEY
+        sync: false
+      - key: RYNE_API_KEY
+        sync: false
+      - key: WALTERWRITES_API_KEY
+        sync: false

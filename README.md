@@ -26,6 +26,46 @@ run bot-detection (e.g. Cloudflare) that resets automated browser connections
 outright — when that happens the result is surfaced as an explicit error
 rather than fabricated data.
 
+## Deploying (Render)
+
+This app runs a long-lived Node process (background job runner + on-disk
+result storage), so it needs a persistent server, not a serverless platform
+like Vercel — Vercel would kill the background run as soon as the HTTP
+response is sent, and its filesystem isn't reliable across invocations.
+
+1. Push this repo to GitHub (already done if you're reading this from the
+   repo) and sign in to [Render](https://render.com) with GitHub.
+2. **New +** → **Blueprint** → connect the `test_ai_detector` repository.
+   Render will detect `render.yaml` in this repo and pre-fill the service
+   (build command, start command, free plan) automatically.
+3. When prompted, fill in the environment variables (same values as your
+   local `.env.local`): `SAPLING_API_KEY`, `GOWINSTON_API_KEY`,
+   `PANGRAM_API_KEY`, `PANGRAM_API_NAME`, `COPYLEAKS_EMAIL`,
+   `COPYLEAKS_API_KEY`, `RYNE_API_KEY`, `WALTERWRITES_API_KEY`. Also set
+   `PORTAL_BASIC_AUTH_USER` / `PORTAL_BASIC_AUTH_PASS` to any username/password
+   you choose - **strongly recommended**, since every request against this
+   deployed URL calls paid APIs, and without this anyone with the link can
+   spend your credits. Leave both blank to disable the login prompt.
+4. Click **Apply** / **Create Web Service**. Render builds and starts the
+   app; once live it gives you a public URL like
+   `https://ai-detector-testing-portal.onrender.com`.
+
+Caveats specific to this deployment:
+
+- **The free plan spins down after 15 minutes of inactivity** and takes
+  ~30-50s to cold-start on the next request — the first load after idling
+  will feel slow.
+- **GPTZero/Originality.ai/Grammarly (browser automation) will not work
+  out of the box** — Render's Node environment doesn't have Chromium
+  pre-installed like this repo's original dev sandbox did. Those three
+  tools will report a clear "browser launch failed" error rather than a
+  fabricated result. To enable them, add a build step that installs
+  Chromium (`npx playwright install --with-deps chromium`) and set
+  `CHROMIUM_EXECUTABLE_PATH` accordingly; expect them to still be blocked
+  by the sites' own bot protection.
+- The 6 real-API tools (Sapling, Winston AI, Pangram, Copyleaks,
+  WalterWrites, Ryne.ai) work normally once their env vars are set.
+
 ## Setup
 
 1. Copy `.env.local.example` to `.env.local` (or edit `.env.local` directly)

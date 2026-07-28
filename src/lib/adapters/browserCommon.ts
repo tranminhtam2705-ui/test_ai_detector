@@ -8,11 +8,18 @@ let browserPromise: Promise<Browser> | null = null;
 
 async function getBrowser(): Promise<Browser> {
   if (!browserPromise) {
-    const { chromium } = await import('playwright-core');
-    browserPromise = chromium.launch({
-      headless: true,
-      executablePath: CHROMIUM_PATH,
-      args: ['--disable-blink-features=AutomationControlled'],
+    browserPromise = (async () => {
+      const { chromium } = await import('playwright-core');
+      return chromium.launch({
+        headless: true,
+        executablePath: CHROMIUM_PATH,
+        args: ['--disable-blink-features=AutomationControlled'],
+      });
+    })();
+    browserPromise.catch(() => {
+      // Allow a retry on the next call instead of caching a permanent rejection
+      // (e.g. transient launch failure, or Chromium not installed on this host).
+      browserPromise = null;
     });
   }
   return browserPromise;
